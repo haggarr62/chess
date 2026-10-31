@@ -1,0 +1,567 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Dad &amp; Me Chess</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: correspondence-chess desk. Board on the left, move ledger on the right; stacks on phones. */
+:root{
+  --bg:#E9EDF1; --panel:#FFFFFF; --fg:#1B232C; --muted:#5D6B79; --line:#D3DAE1;
+  --accent:#2E6A50; --accent-fg:#FFFFFF; --warn:#A2461F; --warn-soft:#F6E2D8;
+  --sq-light:#E8D2AC; --sq-dark:#9A6A44; --sq-last:rgba(214,178,40,.55); --sq-sel:rgba(46,106,80,.55); --sq-check:rgba(200,40,30,.65);
+  --piece-w:#FBFAF7; --piece-b:#1A1612;
+  --f-display:"Young Serif",Georgia,"Times New Roman",serif;
+  --f-body:"Figtree",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --f-mono:"JetBrains Mono",ui-monospace,Menlo,Consolas,monospace;
+  --f-piece:"Segoe UI Symbol","DejaVu Sans","Noto Sans Symbols 2","Apple Symbols",serif;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#11161B; --panel:#1A2128; --fg:#E5EAEE; --muted:#93A1AE; --line:#2C3640;
+  --accent:#5DB088; --accent-fg:#0E1A14; --warn:#F09A6E; --warn-soft:#3A2419; color-scheme:dark}}
+*{box-sizing:border-box}
+html{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--f-body);font-size:15px;line-height:1.5;
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 40px}
+[hidden]{display:none!important}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:20px}
+header{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+h1{font-family:var(--f-display);font-weight:400;font-size:28px;margin:0;text-wrap:balance}
+h1 small{display:block;font-family:var(--f-body);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:999px;font-weight:600;font-size:13px;background:var(--panel);border:1px solid var(--line);color:var(--muted)}
+.pill .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.pill.yours{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.pill.yours .dot{background:var(--accent-fg);animation:pulse 1.6s ease-in-out infinite}
+.pill.over{background:var(--warn-soft);border-color:transparent;color:var(--warn)}
+.pill.over .dot{background:var(--warn)}
+@keyframes pulse{50%{opacity:.25}}
+@media (prefers-reduced-motion:reduce){.pill.yours .dot{animation:none}}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+@media (max-width:820px){main{grid-template-columns:minmax(0,1fr)}}
+.board-col{display:flex;flex-direction:column;gap:10px;min-width:0}
+.player-strip{display:flex;align-items:center;gap:10px;min-height:32px;min-width:0}
+.player-strip .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.player-strip .cap{margin-left:auto;font-family:var(--f-piece);font-size:18px;color:var(--muted);letter-spacing:-2px;white-space:nowrap;overflow:hidden}
+.player-strip .adv{font-family:var(--f-mono);font-size:12px;margin-left:6px;letter-spacing:0}
+.player-strip.turn .nm::after{content:"to move";margin-left:8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+
+.board-frame{position:relative;width:100%;max-width:600px;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 0 0 6px #5A3B22,0 10px 30px rgba(0,0,0,.25)}
+#board{display:grid;grid-template-columns:repeat(8,1fr);grid-template-rows:repeat(8,1fr);width:100%;height:100%}
+.sq{position:relative;border:0;padding:0;margin:0;display:flex;align-items:center;justify-content:center;cursor:default;font:inherit;color:inherit}
+.sq.l{background:var(--sq-light)} .sq.d{background:var(--sq-dark)}
+.sq.last::before,.sq.sel::before,.sq.check::before{content:"";position:absolute;inset:0}
+.sq.last::before{background:var(--sq-last)} .sq.sel::before{background:var(--sq-sel)}
+.sq.check::before{background:radial-gradient(circle,var(--sq-check) 0%,transparent 72%)}
+.sq.can{cursor:pointer}
+.sq:focus-visible{outline:3px solid var(--accent);outline-offset:-3px;z-index:2}
+.pc{position:relative;font-family:var(--f-piece);font-size:min(9.2vw,58px);line-height:1;user-select:none;pointer-events:none}
+.pc.w{color:var(--piece-w);text-shadow:0 0 1px #000,0 0 1px #000,0 1px 1px #000,0 2px 3px rgba(0,0,0,.35)}
+.pc.b{color:var(--piece-b);text-shadow:0 1px 0 rgba(255,255,255,.25),0 2px 3px rgba(0,0,0,.3)}
+.sq.tgt::after{content:"";position:absolute;width:30%;height:30%;border-radius:50%;background:rgba(20,30,25,.35)}
+.sq.tgt.cp::after{width:88%;height:88%;background:transparent;border:5px solid rgba(20,30,25,.35)}
+.coord{position:absolute;font-family:var(--f-mono);font-size:10px;font-weight:600;opacity:.75;pointer-events:none}
+.coord.f{right:3px;bottom:1px} .coord.r{right:3px;top:1px}
+.sq.l .coord{color:var(--sq-dark)} .sq.d .coord{color:var(--sq-light)}
+.promo{position:absolute;inset:0;background:rgba(10,14,18,.6);display:flex;align-items:center;justify-content:center;z-index:5}
+.promo-box{background:var(--panel);border-radius:10px;padding:14px;display:flex;flex-direction:column;gap:10px;align-items:center}
+.promo-box p{margin:0;font-weight:600}
+.promo-row{display:flex;gap:8px}
+.promo-row button{width:64px;height:64px;border-radius:8px;border:1px solid var(--line);background:var(--sq-light);cursor:pointer}
+.promo-row button .pc{font-size:44px}
+
+aside{display:flex;flex-direction:column;gap:16px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.card h2{margin:0;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:700}
+.status-line{font-family:var(--f-display);font-size:21px;line-height:1.25;text-wrap:balance}
+.sub{color:var(--muted);font-size:13px;margin:0}
+.btn{appearance:none;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:600 14px var(--f-body);padding:9px 14px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--muted)}
+.btn:focus-visible,input:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-fg)}
+.btn.danger{color:var(--warn)}
+.btn.link{background:none;border:0;padding:0;color:var(--muted);text-decoration:underline;font-weight:500}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+label.check{display:flex;gap:8px;align-items:center;font-size:14px;cursor:pointer}
+input[type=email]{width:100%;font:15px var(--f-body);padding:10px 12px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)}
+.ledger{max-height:340px;overflow-y:auto;font-family:var(--f-mono);font-size:13px;font-variant-numeric:tabular-nums;border-top:1px solid var(--line)}
+.ledger table{width:100%;border-collapse:collapse}
+.ledger td{padding:5px 4px;border-bottom:1px solid var(--line);vertical-align:top}
+.ledger td.n{color:var(--muted);width:2.4em}
+.ledger td.mv span{display:block}
+.ledger td.mv small{display:block;font-family:var(--f-body);font-size:11px;color:var(--muted)}
+.ledger .hl span{font-weight:700;color:var(--accent)}
+.empty{color:var(--muted);font-size:13px;padding:8px 0 0}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--fg);color:var(--bg);padding:12px 18px;border-radius:10px;font-weight:600;box-shadow:0 8px 24px rgba(0,0,0,.25);z-index:20;max-width:calc(100% - 32px)}
+.notice{font-size:13px;padding:10px 12px;border-radius:8px;background:var(--warn-soft);color:var(--warn)}
+.gate{max-width:420px;margin:40px auto 0;width:100%}
+.gate .status-line{font-size:24px}
+.divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;text-transform:uppercase;letter-spacing:.12em}
+.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
+.who{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Dad &amp; Me Chess<small>Correspondence game · no clock</small></h1>
+    <div class="row">
+      <span class="who" id="who" hidden></span>
+      <span class="pill" id="pill" hidden><span class="dot"></span><span id="pillText"></span></span>
+    </div>
+  </header>
+
+  <!-- Sign-in gate -->
+  <section class="gate" id="gate" hidden>
+    <div class="card">
+      <div class="status-line" id="gateTitle">Sign in to play</div>
+      <p class="sub" id="gateSub">Only the two players on the guest list can open this game.</p>
+      <div id="gateForms">
+        <div class="row"><button class="btn primary" id="googleBtn" type="button">Continue with Google</button></div>
+        <div class="divider" style="margin:14px 0">or</div>
+        <form id="emailForm" class="row" style="flex-direction:column;align-items:stretch">
+          <label for="emailInput" class="sub">Email me a sign-in link</label>
+          <input type="email" id="emailInput" autocomplete="email" placeholder="you@example.com" required>
+          <button class="btn" type="submit" id="emailBtn">Send link</button>
+        </form>
+      </div>
+      <div class="notice" id="gateNotice" hidden></div>
+    </div>
+  </section>
+
+  <!-- Game -->
+  <main id="game" hidden>
+    <section class="board-col" aria-label="Board">
+      <div class="player-strip" id="topStrip"></div>
+      <div class="board-frame">
+        <div id="board" role="grid" aria-label="Chess board"></div>
+        <div class="promo" id="promo" hidden>
+          <div class="promo-box"><p>Promote to</p><div class="promo-row" id="promoRow"></div><button class="btn" id="promoCancel" type="button">Cancel</button></div>
+        </div>
+      </div>
+      <div class="player-strip" id="bottomStrip"></div>
+    </section>
+
+    <aside>
+      <div class="card">
+        <h2>Status</h2>
+        <div class="status-line" id="statusLine">Loading the game…</div>
+        <p class="sub" id="statusSub"></p>
+        <div class="row" id="seatRow"></div>
+      </div>
+      <div class="card">
+        <h2>Move ledger</h2>
+        <div class="ledger" id="ledger"><div class="empty">No moves yet. White opens.</div></div>
+      </div>
+      <div class="card">
+        <h2>Notifications</h2>
+        <label class="check"><input type="checkbox" id="notifyBox"> Email me when it's my move</label>
+        <p class="sub" id="notifySub">An email with a link to the game is sent each time your opponent moves.</p>
+      </div>
+      <div class="card">
+        <h2>Game</h2>
+        <div class="row">
+          <button class="btn danger" id="resignBtn" type="button">Resign</button>
+          <button class="btn" id="newBtn" type="button">New game</button>
+          <button class="btn link" id="signOutBtn" type="button">Sign out</button>
+        </div>
+        <p class="sub" id="confirmSub" hidden></p>
+      </div>
+      <div class="notice" id="notice" hidden></div>
+    </aside>
+  </main>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4.4.1/dist/email.min.js"></script>
+<script>
+(() => {
+const CFG = window.CHESS_CONFIG || {};
+const GLYPH = {k:"♚",q:"♛",r:"♜",b:"♝",n:"♞",p:"♟"};
+const VS = "︎";
+const VAL = {p:1,n:3,b:3,r:5,q:9,k:0};
+const START_COUNT = {p:8,n:2,b:2,r:2,q:1,k:1};
+const BASE_TITLE = "Dad & Me Chess";
+const GAME_URL = CFG.siteUrl || (location.origin + location.pathname);
+const $ = id => document.getElementById(id);
+
+let auth, fs, gameRef, me=null, game=null, chess=new Chess();
+let selected=null, targets=[], prevCount=null, firstSnap=true, pendingPromo=null, busy=false, confirmAction=null, unsub=null;
+
+// ---------- helpers ----------
+function toast(msg, ms=3500){ const t=$("toast"); t.textContent=msg; t.hidden=false; clearTimeout(toast._t); toast._t=setTimeout(()=>t.hidden=true, ms); }
+function notice(msg){ $("notice").textContent=msg||""; $("notice").hidden=!msg; }
+function gateNotice(msg){ $("gateNotice").textContent=msg||""; $("gateNotice").hidden=!msg; }
+function players(){ return (game && game.players) || {}; }
+function myColor(){ const p=players(); if(!me) return null; if(p.w && p.w.uid===me.uid) return "w"; if(p.b && p.b.uid===me.uid) return "b"; return null; }
+function seatName(c, fb){ const p=players()[c]; return (p && p.name) || fb || (c==="w"?"White":"Black"); }
+function nameByUid(uid, fb){ const p=players(); for(const c of ["w","b"]) if(p[c] && p[c].uid===uid) return p[c].name; return fb; }
+function myName(){ return (me.displayName && me.displayName.split(" ")[0]) || (me.email||"").split("@")[0] || "Player"; }
+function ago(ts){ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000);
+  if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+" min ago"; if(s<86400) return Math.floor(s/3600)+" h ago";
+  const d=Math.floor(s/86400); return d===1?"yesterday":d+" days ago"; }
+function stamp(ts){ try{ return ts ? new Date(ts).toLocaleString([], {month:"short",day:"numeric",hour:"numeric",minute:"2-digit"}) : ""; }catch(e){ return ""; } }
+function replay(moves){ const c=new Chess(); for(const m of moves||[]){ if(!c.move({from:m.from,to:m.to,promotion:m.promotion||undefined})) break; } return c; }
+function isMyTurn(){ const p=players(); return !!game && game.status==="active" && !!p.w && !!p.b && chess.turn()===myColor(); }
+
+// ---------- email pings ----------
+// Each player has their own EmailJS template whose recipient is fixed inside EmailJS,
+// so this page can only ever email the two players. Templates are looked up by a
+// SHA-256 hash of the player's email so the addresses aren't published in this code.
+function emailReady(){ const e=CFG.emailjs||{}; return !!(window.emailjs && e.serviceId && e.publicKey && e.templates && !String(e.publicKey).startsWith("YOUR_")); }
+async function emailHash(addr){
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(addr).trim().toLowerCase()));
+  return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join("");
+}
+async function pingOpponent(kind, detail){
+  const mc=myColor(); if(!mc) return;
+  const opp = players()[mc==="w"?"b":"w"];
+  if(!opp || !opp.email || opp.notify===false || !emailReady()) return;
+  const e=CFG.emailjs;
+  const templateId = e.templates[await emailHash(opp.email)];
+  if(!templateId){ console.warn("No email template for opponent"); return; }
+  const params = {
+    to_name: opp.name || "there", from_name: myName(),
+    move_san: detail.san || "", move_number: detail.moveNumber || "",
+    subject: kind==="move" ? `Your move: ${myName()} played ${detail.san}` : (detail.result || "Chess update"),
+    message: kind==="move" ? `${myName()} played ${detail.san} (move ${detail.moveNumber}). It's your turn.` : (detail.result || ""),
+    game_url: GAME_URL
+  };
+  try{ await emailjs.send(e.serviceId, templateId, params, {publicKey:e.publicKey}); }
+  catch(err){ console.warn("Email failed", err); toast("Move saved, but the email to "+(opp.name||"your opponent")+" didn't send."); }
+}
+
+// ---------- rendering ----------
+function render(){ renderBoard(); renderStrips(); renderStatus(); renderLedger(); renderControls(); }
+
+function renderBoard(){
+  const flip = myColor()==="b";
+  const b = chess.board();
+  const moves = (game && game.moves) || [];
+  const last = moves.length ? moves[moves.length-1] : null;
+  const turn = chess.turn();
+  let checkSq=null;
+  if(chess.in_check()) for(let r=0;r<8;r++) for(let f=0;f<8;f++){ const p=b[r][f]; if(p&&p.type==="k"&&p.color===turn) checkSq="abcdefgh"[f]+(8-r); }
+  const canAct = isMyTurn();
+  const frag = document.createDocumentFragment();
+  for(let i=0;i<8;i++) for(let j=0;j<8;j++){
+    const r=flip?7-i:i, f=flip?7-j:j, sq="abcdefgh"[f]+(8-r), p=b[r][f];
+    const el=document.createElement("button");
+    el.type="button"; el.className="sq "+(((r+f)%2===0)?"l":"d");
+    el.setAttribute("aria-label", sq+(p?" "+(p.color==="w"?"white ":"black ")+({k:"king",q:"queen",r:"rook",b:"bishop",n:"knight",p:"pawn"})[p.type]:""));
+    if(last && (last.from===sq||last.to===sq)) el.classList.add("last");
+    if(selected===sq) el.classList.add("sel");
+    if(checkSq===sq) el.classList.add("check");
+    const t=targets.find(m=>m.to===sq);
+    if(t){ el.classList.add("tgt","can"); if(p||t.flags.includes("e")) el.classList.add("cp"); }
+    if(canAct && p && p.color===myColor()) el.classList.add("can");
+    if(p){ const s=document.createElement("span"); s.className="pc "+p.color; s.textContent=GLYPH[p.type]+VS; el.appendChild(s); }
+    if(j===7){ const c=document.createElement("span"); c.className="coord r"; c.textContent=8-r; el.appendChild(c); }
+    if(i===7){ const c=document.createElement("span"); c.className="coord f"; c.textContent="abcdefgh"[f]; el.appendChild(c); }
+    el.onclick=()=>onSquare(sq);
+    frag.appendChild(el);
+  }
+  $("board").replaceChildren(frag);
+}
+
+function material(){
+  const left={w:{p:0,n:0,b:0,r:0,q:0,k:0},b:{p:0,n:0,b:0,r:0,q:0,k:0}};
+  chess.board().forEach(row=>row.forEach(p=>{ if(p) left[p.color][p.type]++; }));
+  const lost={w:[],b:[]}, mat={w:0,b:0};
+  for(const c of ["w","b"]) for(const t of ["q","r","b","n","p"]){
+    for(let i=0;i<Math.max(0,START_COUNT[t]-left[c][t]);i++) lost[c].push(t);
+    mat[c]+=left[c][t]*VAL[t];
+  }
+  return {lost,mat};
+}
+
+function renderStrips(){
+  const flip=myColor()==="b", {lost,mat}=material(), p=players();
+  const strip=(el,color)=>{
+    const seat=p[color], opp=color==="w"?"b":"w";
+    el.replaceChildren();
+    const nm=document.createElement("span"); nm.className="nm";
+    nm.textContent = seat ? seat.name + (me && seat.uid===me.uid ? " (you)" : "") : (color==="w"?"White":"Black")+" seat open";
+    const cap=document.createElement("span"); cap.className="cap"; cap.textContent=lost[opp].map(t=>GLYPH[t]+VS).join("");
+    const diff=mat[color]-mat[opp];
+    if(diff>0){ const a=document.createElement("span"); a.className="adv"; a.textContent="+"+diff; cap.appendChild(a); }
+    el.append(nm,cap);
+    el.classList.toggle("turn", !!game && game.status==="active" && !!p.w && !!p.b && chess.turn()===color);
+  };
+  strip($("topStrip"), flip?"w":"b");
+  strip($("bottomStrip"), flip?"b":"w");
+}
+
+function seatBtn(label,color){ const b=document.createElement("button"); b.type="button"; b.className="btn primary"; b.textContent=label; b.onclick=()=>claimSeat(color); return b; }
+
+function renderStatus(){
+  const pill=$("pill"), pt=$("pillText"), line=$("statusLine"), sub=$("statusSub"), seat=$("seatRow");
+  pill.hidden=false; pill.className="pill"; seat.replaceChildren();
+  const p=players(), mc=myColor();
+  if(!game){
+    pt.textContent="No game yet"; line.textContent="Pick a side to start the first game.";
+    sub.textContent="White moves first. The other player takes the remaining seat when they sign in.";
+    seat.append(seatBtn("Play White","w"), seatBtn("Play Black","b"));
+    document.title=BASE_TITLE; return;
+  }
+  if(game.status!=="active"){
+    pill.classList.add("over"); pt.textContent="Game over";
+    line.textContent=game.result||"Game over."; sub.textContent="Start a new game whenever you're both ready. Colors swap each game.";
+    document.title=BASE_TITLE; return;
+  }
+  if(!p.w || !p.b){
+    const open=!p.w?"w":"b";
+    pt.textContent="Waiting for a player";
+    if(mc){ line.textContent="Waiting for your opponent to sit down."; sub.textContent="Send them the link to this page. They'll get the "+(open==="w"?"White":"Black")+" pieces."; }
+    else { line.textContent="A seat is open."; sub.textContent=""; seat.append(seatBtn("Play "+(open==="w"?"White":"Black"),open)); }
+    document.title=BASE_TITLE; return;
+  }
+  const tc=chess.turn(), moves=game.moves||[], last=moves[moves.length-1];
+  if(isMyTurn()){
+    pill.classList.add("yours"); pt.textContent="Your move";
+    line.textContent = chess.in_check() ? "Your move. You're in check." : "Your move.";
+    document.title="● Your move · "+BASE_TITLE;
+  } else if(mc){
+    pt.textContent="Waiting for "+seatName(tc); line.textContent=seatName(tc)+" is thinking."; document.title=BASE_TITLE;
+  } else {
+    pt.textContent=(tc==="w"?"White":"Black")+" to move"; line.textContent=seatName(tc)+" to move."; document.title=BASE_TITLE;
+  }
+  sub.textContent = last ? `Last move ${last.san} by ${nameByUid(last.by,"opponent")}, ${ago(last.at)}.` : "No moves yet.";
+}
+
+function renderLedger(){
+  const moves=(game && game.moves)||[], L=$("ledger");
+  if(!moves.length){ L.innerHTML='<div class="empty">No moves yet. White opens.</div>'; return; }
+  const tbl=document.createElement("table");
+  for(let i=0;i<moves.length;i+=2){
+    const tr=document.createElement("tr");
+    const n=document.createElement("td"); n.className="n"; n.textContent=(i/2+1)+"."; tr.appendChild(n);
+    for(const k of [i,i+1]){
+      const td=document.createElement("td"); td.className="mv"; const m=moves[k];
+      if(m){ const s=document.createElement("span"); s.textContent=m.san; const sm=document.createElement("small"); sm.textContent=stamp(m.at); td.append(s,sm); if(k===moves.length-1) td.classList.add("hl"); }
+      tr.appendChild(td);
+    }
+    tbl.appendChild(tr);
+  }
+  L.replaceChildren(tbl); L.scrollTop=L.scrollHeight;
+}
+
+function renderControls(){
+  const mc=myColor(), p=players(), active=game && game.status==="active" && p.w && p.b;
+  $("resignBtn").disabled=!(mc && active);
+  $("newBtn").disabled=!(mc && game);
+  const box=$("notifyBox");
+  box.disabled=!mc; box.checked=!!(mc && p[mc].notify!==false);
+  $("notifySub").textContent = !emailReady()
+    ? "Email alerts aren't set up yet. Add the EmailJS keys to config.js to turn them on."
+    : (mc ? `Alerts go to ${p[mc].email}. Each email links back to this game.` : "Take a seat to get email alerts.");
+  if(!confirmAction) $("confirmSub").hidden=true;
+}
+
+// ---------- interaction ----------
+function onSquare(sq){
+  if(busy || !isMyTurn()) return;
+  const p=chess.get(sq);
+  if(selected){
+    const cand=targets.filter(m=>m.to===sq);
+    if(cand.length){ if(cand.some(m=>m.promotion)) return askPromotion(selected,sq); return makeMove(selected,sq); }
+  }
+  if(p && p.color===myColor()){ selected=sq; targets=chess.moves({square:sq,verbose:true}); }
+  else { selected=null; targets=[]; }
+  renderBoard();
+}
+
+function askPromotion(from,to){
+  pendingPromo={from,to};
+  const row=$("promoRow"); row.replaceChildren();
+  for(const t of ["q","r","b","n"]){
+    const b=document.createElement("button"); b.type="button"; b.setAttribute("aria-label",({q:"Queen",r:"Rook",b:"Bishop",n:"Knight"})[t]);
+    const s=document.createElement("span"); s.className="pc "+myColor(); s.textContent=GLYPH[t]+VS; b.appendChild(s);
+    b.onclick=()=>{ $("promo").hidden=true; const pp=pendingPromo; pendingPromo=null; makeMove(pp.from,pp.to,t); };
+    row.appendChild(b);
+  }
+  $("promo").hidden=false;
+}
+$("promoCancel").onclick=()=>{ $("promo").hidden=true; pendingPromo=null; };
+
+async function makeMove(from,to,promotion){
+  busy=true; selected=null; targets=[];
+  let saved=null;
+  try{
+    await fs.runTransaction(async tx=>{
+      const snap=await tx.get(gameRef); if(!snap.exists) throw {code:"gone"};
+      const d=snap.data(); const c=replay(d.moves);
+      const mc = d.players.w && d.players.w.uid===me.uid ? "w" : (d.players.b && d.players.b.uid===me.uid ? "b" : null);
+      if(d.status!=="active" || c.turn()!==mc) throw {code:"stale"};
+      const res=c.move({from,to,promotion:promotion||"q"}); if(!res) throw {code:"illegal"};
+      const moves=[...(d.moves||[]), {from,to,promotion:res.promotion||null,san:res.san,by:me.uid,at:Date.now()}];
+      const upd={moves, fen:c.fen(), updatedAt:Date.now(), lastMoveBy:me.uid};
+      if(c.in_checkmate()){ upd.status="over"; upd.result=`Checkmate. ${myName()} wins with ${res.color==="w"?"White":"Black"}.`; }
+      else if(c.in_stalemate()){ upd.status="over"; upd.result="Draw by stalemate."; }
+      else if(c.in_threefold_repetition()){ upd.status="over"; upd.result="Draw by threefold repetition."; }
+      else if(c.insufficient_material()){ upd.status="over"; upd.result="Draw: not enough material to checkmate."; }
+      else if(c.in_draw()){ upd.status="over"; upd.result="Draw by the fifty-move rule."; }
+      tx.update(gameRef, upd);
+      saved={san:res.san, moveNumber:Math.ceil(moves.length/2), result:upd.result, over:upd.status==="over"};
+    });
+  }catch(e){
+    if(e && e.code==="stale") toast("The board changed. Here's the latest position.");
+    else if(e && e.code==="illegal") toast("That move isn't legal.");
+    else toast("That move didn't save. Check your connection and try again.");
+    console.warn(e);
+  }
+  busy=false; renderBoard();
+  if(saved){ if(saved.over) pingOpponent("over",{result:saved.result}); else pingOpponent("move",saved); }
+}
+
+async function claimSeat(color){
+  const entry={uid:me.uid, email:me.email, name:myName(), notify:true};
+  try{
+    await fs.runTransaction(async tx=>{
+      const snap=await tx.get(gameRef);
+      if(!snap.exists){
+        tx.set(gameRef,{players:{[color]:entry}, moves:[], status:"active", result:null, gameNo:1, startedAt:Date.now(), updatedAt:Date.now()});
+        return;
+      }
+      const d=snap.data(); const p=d.players||{};
+      if(p[color]) throw {code:"taken"};
+      if((p.w&&p.w.uid===me.uid)||(p.b&&p.b.uid===me.uid)) throw {code:"seated"};
+      tx.update(gameRef,{["players."+color]:entry, updatedAt:Date.now()});
+    });
+  }catch(e){ toast(e && e.code==="taken" ? "Someone just took that seat." : "Couldn't take the seat. Try again."); console.warn(e); }
+}
+
+function armConfirm(kind,text,fn){
+  if(confirmAction && confirmAction.kind===kind){ const f=confirmAction.fn; confirmAction=null; $("confirmSub").hidden=true; return f(); }
+  confirmAction={kind,fn}; $("confirmSub").textContent=text; $("confirmSub").hidden=false;
+  clearTimeout(armConfirm._t); armConfirm._t=setTimeout(()=>{ confirmAction=null; $("confirmSub").hidden=true; },5000);
+}
+$("resignBtn").onclick=()=>armConfirm("resign","Tap Resign again within 5 seconds to confirm.", async ()=>{
+  const mc=myColor(); const result=`${myName()} resigned. ${seatName(mc==="w"?"b":"w")} wins.`;
+  try{ await gameRef.update({status:"over", result, updatedAt:Date.now(), lastMoveBy:me.uid}); pingOpponent("over",{result}); }
+  catch(e){ toast("Couldn't resign. Try again."); }
+});
+$("newBtn").onclick=()=>{
+  const go=async()=>{
+    const p=players();
+    try{ await gameRef.set({players:{...(p.b?{w:p.b}:{}), ...(p.w?{b:p.w}:{})}, moves:[], status:"active", result:null, gameNo:(game.gameNo||1)+1, startedAt:Date.now(), updatedAt:Date.now(), lastMoveBy:me.uid});
+      toast("New game started. Colors swapped.");
+      const mc=myColor(); const opp=players()[mc==="w"?"b":"w"];
+      if(opp) pingOpponent("over",{result:`${myName()} started a new game. You have ${mc==="w"?"Black":"White"}.`});
+    }catch(e){ toast("Couldn't start a new game. Try again."); }
+  };
+  if(game && game.status==="active" && (game.moves||[]).length) armConfirm("new","This abandons the current game. Tap New game again to confirm.",go);
+  else go();
+};
+$("notifyBox").onchange=async e=>{
+  const mc=myColor(); if(!mc) return;
+  try{ await gameRef.update({["players."+mc+".notify"]: e.target.checked}); toast(e.target.checked?"Email alerts on.":"Email alerts off."); }
+  catch(err){ toast("Couldn't change that setting."); e.target.checked=!e.target.checked; }
+};
+
+// ---------- live game ----------
+function onGame(snap){
+  const old=game;
+  game = snap.exists ? snap.data() : null;
+  chess = replay(game && game.moves);
+  const count=(game && game.moves || []).length;
+  const fresh = !snap.metadata.fromCache;
+  if(!firstSnap && old && game){
+    const newGame = game.gameNo!==old.gameNo;
+    if(!newGame && count>prevCount){ const last=game.moves[count-1]; if(last.by!==me.uid && isMyTurn()) toast(`${nameByUid(last.by,"Your opponent")} played ${last.san}. Your move.`,6000); }
+    if(!newGame && old.status==="active" && game.status!=="active" && game.lastMoveBy!==me.uid) toast(game.result||"Game over.",6000);
+    if(newGame && game.lastMoveBy!==me.uid) toast("A new game has started.",5000);
+  }
+  if(firstSnap && isMyTurn() && count){ const last=game.moves[count-1]; toast(`${nameByUid(last.by,"Your opponent")} played ${last.san}. Your move.`,5000); }
+  if(fresh) firstSnap=false;
+  prevCount=count;
+  if(selected && !isMyTurn()){ selected=null; targets=[]; }
+  notice(""); render();
+}
+
+function startGame(){
+  $("gate").hidden=true; $("game").hidden=false;
+  $("who").hidden=false; $("who").textContent=me.email;
+  firstSnap=true; prevCount=null;
+  unsub = gameRef.onSnapshot({includeMetadataChanges:false}, onGame, err=>{
+    if(err.code==="permission-denied"){
+      showGate("This game is private", `${me.email} isn't on the guest list. Sign in with the email address that was added to the game, or ask the owner to add yours.`);
+      $("gateForms").hidden=false; auth.signOut();
+    } else notice("Lost the connection to the game. Reload the page to reconnect.");
+  });
+  setInterval(()=>{ if(game) renderStatus(); },60000);
+}
+
+function showGate(title, sub){ $("game").hidden=true; $("gate").hidden=false; $("pill").hidden=true; $("who").hidden=true; $("gateTitle").textContent=title; $("gateSub").textContent=sub; }
+
+// ---------- auth ----------
+function boot(){
+  const fb=CFG.firebase||{};
+  if(!fb.apiKey || String(fb.apiKey).startsWith("YOUR_")){
+    showGate("Almost ready","This site still needs its Firebase settings. Fill in config.js using the setup guide, then reload.");
+    $("gateForms").hidden=true; return;
+  }
+  firebase.initializeApp(fb);
+  auth=firebase.auth(); fs=firebase.firestore();
+  gameRef=fs.collection("games").doc("main");
+
+  // Completing an email-link sign-in
+  if(auth.isSignInWithEmailLink(location.href)){
+    let email=null; try{ email=localStorage.getItem("chessSignInEmail"); }catch(e){}
+    if(email){
+      auth.signInWithEmailLink(email, location.href)
+        .then(()=>{ try{localStorage.removeItem("chessSignInEmail");}catch(e){} history.replaceState(null,"",location.pathname); })
+        .catch(()=>gateNotice("That sign-in link has expired or was already used. Request a new one."));
+    } else {
+      showGate("Confirm your email","Enter the email address the sign-in link was sent to.");
+      $("googleBtn").hidden=true; $("emailBtn").textContent="Finish signing in";
+      $("emailForm").onsubmit=ev=>{ ev.preventDefault();
+        auth.signInWithEmailLink($("emailInput").value.trim(), location.href)
+          .then(()=>history.replaceState(null,"",location.pathname))
+          .catch(()=>gateNotice("That didn't match. Use the same email the link was sent to, or request a new link."));
+      };
+    }
+  }
+
+  auth.getRedirectResult().catch(()=>{});
+  auth.onAuthStateChanged(u=>{
+    if(unsub){ unsub(); unsub=null; }
+    me=u;
+    if(u){ gateNotice(""); startGame(); }
+    else if(!auth.isSignInWithEmailLink(location.href)){ showGate("Sign in to play","Only the two players on the guest list can open this game."); $("gateForms").hidden=false; }
+  });
+
+  $("googleBtn").onclick=async()=>{
+    const prov=new firebase.auth.GoogleAuthProvider(); prov.setCustomParameters({prompt:"select_account"});
+    try{ await auth.signInWithPopup(prov); }
+    catch(e){ if(e.code==="auth/popup-blocked"||e.code==="auth/operation-not-supported-in-this-environment") auth.signInWithRedirect(prov);
+      else if(e.code!=="auth/popup-closed-by-user" && e.code!=="auth/cancelled-popup-request") gateNotice("Google sign-in didn't work ("+e.code+"). Try the email link instead."); }
+  };
+  if(!auth.isSignInWithEmailLink(location.href)) $("emailForm").onsubmit=async ev=>{
+    ev.preventDefault(); const email=$("emailInput").value.trim(); if(!email) return;
+    $("emailBtn").disabled=true;
+    try{
+      await auth.sendSignInLinkToEmail(email,{url:location.origin+location.pathname, handleCodeInApp:true});
+      try{ localStorage.setItem("chessSignInEmail",email); }catch(e){}
+      gateNotice(""); $("gateSub").textContent=`Check ${email} for a sign-in link. Open it on this device.`; toast("Sign-in link sent.");
+    }catch(e){ gateNotice("Couldn't send the link ("+e.code+"). Check the address and try again."); }
+    $("emailBtn").disabled=false;
+  };
+  $("signOutBtn").onclick=()=>auth.signOut();
+}
+
+render(); boot();
+})();
+</script>
+</body>
+</html>
