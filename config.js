@@ -22,5 +22,11 @@ window.CHESS_CONFIG = {
     }
   },
 
+  // Display names shown on the board and in emails, keyed the same way as the templates above.
+  names: {
+    "0f13d5fbca7468e51c25234d19a6796802c616844f086ad3d634db803202cbb5": "Genious",
+    "302a2483e396f5abb1a922ffdfb60f20b5e857639000a392a655b85054784288": "Dad"
+  },
+
   siteUrl: "https://haggarr62.github.io/chess/"
 };
