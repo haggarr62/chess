@@ -1,0 +1,12 @@
+{
+  "name": "Dad & Me Chess",
+  "short_name": "Chess",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#E9EDF1",
+  "theme_color": "#4E6B36",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }
+  ]
+}
