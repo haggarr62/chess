@@ -48,6 +48,9 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items
 .player-strip .nm{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .player-strip .cap{margin-left:auto;font-family:var(--f-piece);font-size:18px;color:var(--muted);letter-spacing:-2px;white-space:nowrap;overflow:hidden}
 .player-strip .adv{font-family:var(--f-mono);font-size:12px;margin-left:6px;letter-spacing:0}
+.player-strip .pres{font-size:12px;color:var(--muted);white-space:nowrap}
+.player-strip .pres.here{color:var(--accent);font-weight:600}
+.player-strip .pres.here::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--accent);margin-right:6px;vertical-align:1px}
 .player-strip.turn .nm::after{content:"to move";margin-left:8px;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
 
 .board-frame{position:relative;width:100%;max-width:600px;aspect-ratio:1;border-radius:6px;overflow:hidden;box-shadow:0 0 0 6px var(--frame),0 10px 30px rgba(0,0,0,.25)}
@@ -318,7 +321,12 @@ function renderStrips(){
     const cap=document.createElement("span"); cap.className="cap"; cap.textContent=lost[opp].map(t=>GLYPH[t]+VS).join("");
     const diff=mat[color]-mat[opp];
     if(diff>0){ const a=document.createElement("span"); a.className="adv"; a.textContent="+"+diff; cap.appendChild(a); }
-    el.append(nm,cap);
+    el.append(nm);
+    if(seat && me && seat.uid!==me.uid){
+      const pr=presenceOf(seat.uid);
+      if(pr){ const s=document.createElement("span"); s.className="pres"+(pr.here?" here":""); s.textContent=pr.text; el.append(s); }
+    }
+    el.append(cap);
     el.classList.toggle("turn", !!game && game.status==="active" && !!p.w && !!p.b && chess.turn()===color);
   };
   strip($("topStrip"), flip?"w":"b");
@@ -493,6 +501,29 @@ $("notifyBox").onchange=async e=>{
   catch(err){ toast("Couldn't change that setting."); e.target.checked=!e.target.checked; }
 };
 
+// ---------- presence ("Sitting At The Table") ----------
+// Each player's page writes a heartbeat to games/presence every 30 s while it's visible,
+// and marks itself away when hidden or closed. A heartbeat older than 75 s counts as away.
+let presRef=null, presence={}, presUnsub=null, presTimer=null;
+function presenceOf(uid){
+  const p=presence[uid]; if(!p || !p.at) return null;
+  const here = p.here && (Date.now()-p.at) < 75000;
+  return here ? {here:true, text:"Sitting At The Table"} : {here:false, text:"Left the table "+ago(p.at)};
+}
+function beat(here){
+  if(!presRef || !me) return;
+  presRef.set({[me.uid]:{at:Date.now(), here:!!here}}, {merge:true}).catch(()=>{});
+}
+function startPresence(){
+  presRef=fs.collection("games").doc("presence");
+  presUnsub=presRef.onSnapshot(s=>{ presence = s.exists ? s.data() : {}; if(game) renderStrips(); }, ()=>{});
+  beat(document.visibilityState==="visible");
+  clearInterval(presTimer);
+  presTimer=setInterval(()=>{ if(document.visibilityState==="visible") beat(true); if(game) renderStrips(); }, 30000);
+}
+document.addEventListener("visibilitychange", ()=>beat(document.visibilityState==="visible"));
+window.addEventListener("pagehide", ()=>beat(false));
+
 // ---------- live game ----------
 // Snapshots are handled in order, after the nicknames for everyone in them are known,
 // so a real name never flashes on screen.
@@ -525,6 +556,7 @@ function startGame(){
   $("gate").hidden=true; $("game").hidden=false;
   $("who").hidden=true;
   firstSnap=true; prevCount=null;
+  startPresence();
   unsub = gameRef.onSnapshot({includeMetadataChanges:false}, onGame, err=>{
     if(err.code==="permission-denied"){
       showGate("This game is private", `${me.email} isn't on the guest list. Sign in with the email address that was added to the game, or ask the owner to add yours.`);
@@ -568,6 +600,7 @@ function boot(){
   auth.getRedirectResult().catch(()=>{});
   auth.onAuthStateChanged(u=>{
     if(unsub){ unsub(); unsub=null; }
+    if(!u){ if(presUnsub){ presUnsub(); presUnsub=null; } clearInterval(presTimer); presRef=null; }
     me=u;
     if(u){ gateNotice(""); startGame(); }
     else if(!auth.isSignInWithEmailLink(location.href)){ showGate("Sign in to play","Only the two players on the guest list can open this game."); $("gateForms").hidden=false; }
@@ -589,7 +622,7 @@ function boot(){
     }catch(e){ gateNotice("Couldn't send the link ("+e.code+"). Check the address and try again."); }
     $("emailBtn").disabled=false;
   };
-  $("signOutBtn").onclick=()=>auth.signOut();
+  $("signOutBtn").onclick=async()=>{ try{ if(presRef && me) await presRef.set({[me.uid]:{at:Date.now(), here:false}}, {merge:true}); }catch(e){} auth.signOut(); };
 }
 
 render(); boot();
