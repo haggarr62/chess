@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Dad &amp; Me Chess</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Chess">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#4E6B36">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%E2%99%9E%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Young+Serif&family=Figtree:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap">
@@ -132,6 +139,11 @@ input[type=email]{width:100%;font:15px var(--f-body);padding:10px 12px;border-ra
           <input type="email" id="emailInput" autocomplete="email" placeholder="you@example.com" required>
           <button class="btn" type="submit" id="emailBtn">Send link</button>
         </form>
+        <form id="pasteForm" class="row" style="flex-direction:column;align-items:stretch;margin-top:14px" hidden>
+          <label for="pasteInput" class="sub">Using the home-screen app? In the email, press and hold the sign-in link, choose Copy Link, then paste it here.</label>
+          <input type="url" id="pasteInput" autocomplete="off" placeholder="https://chess-for-two-6e3a6.firebaseapp.com/…">
+          <button class="btn primary" type="submit">Sign in with pasted link</button>
+        </form>
       </div>
       <div class="notice" id="gateNotice" hidden></div>
     </div>
@@ -181,7 +193,7 @@ input[type=email]{width:100%;font:15px var(--f-body);padding:10px 12px;border-ra
 </div>
 <div class="toast" id="toast" hidden></div>
 
-<script src="config.js"></script>
+<script>window.APP_VERSION="5"; document.write('<script src="config.js?v='+window.APP_VERSION+'"><\/script>');</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
@@ -619,11 +631,39 @@ function boot(){
       await auth.sendSignInLinkToEmail(email,{url:location.origin+location.pathname, handleCodeInApp:true});
       try{ localStorage.setItem("chessSignInEmail",email); }catch(e){}
       gateNotice(""); $("gateSub").textContent=`Check ${email} for a sign-in link. Open it on this device.`; toast("Sign-in link sent.");
+      $("pasteForm").hidden=false;
     }catch(e){ gateNotice("Couldn't send the link ("+e.code+"). Check the address and try again."); }
     $("emailBtn").disabled=false;
   };
+  // Home-screen app: the emailed link opens in Safari, not the app, so let the player paste it here instead.
+  $("pasteForm").onsubmit=async ev=>{
+    ev.preventDefault();
+    const link=$("pasteInput").value.trim();
+    let email=$("emailInput").value.trim(); if(!email){ try{ email=localStorage.getItem("chessSignInEmail")||""; }catch(e){} }
+    if(!link || !auth.isSignInWithEmailLink(link)){ gateNotice("That doesn't look like the sign-in link. Copy the whole link from the email and paste it again."); return; }
+    if(!email){ gateNotice("Enter your email address above first, then paste the link."); return; }
+    try{ await auth.signInWithEmailLink(email, link); try{localStorage.removeItem("chessSignInEmail");}catch(e){} }
+    catch(e){ gateNotice("That link has expired or was already used. Send a new one and paste that."); }
+  };
   $("signOutBtn").onclick=async()=>{ try{ if(presRef && me) await presRef.set({[me.uid]:{at:Date.now(), here:false}}, {merge:true}); }catch(e){} auth.signOut(); };
 }
+
+// ---------- auto-update ----------
+// version.txt holds the current version number. When it changes, reload to a fresh URL so the
+// phone can't keep using an old cached copy. A version is only retried once every 2 minutes.
+async function checkVersion(){
+  try{
+    const v=(await fetch("version.txt?t="+Date.now(),{cache:"no-store"}).then(r=>r.text())).trim();
+    if(!v || v===window.APP_VERSION || pendingPromo || busy) return;
+    let tried=null; try{ tried=JSON.parse(sessionStorage.getItem("chessUpdateTry")||"null"); }catch(e){}
+    if(tried && tried.v===v && Date.now()-tried.at < 120000) return;
+    try{ sessionStorage.setItem("chessUpdateTry", JSON.stringify({v, at:Date.now()})); }catch(e){}
+    location.replace(location.pathname+"?v="+encodeURIComponent(v));
+  }catch(e){}
+}
+setTimeout(checkVersion, 5000);
+setInterval(checkVersion, 3*60*1000);
+document.addEventListener("visibilitychange", ()=>{ if(document.visibilityState==="visible") checkVersion(); });
 
 render(); boot();
 })();
