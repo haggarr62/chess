@@ -204,9 +204,32 @@ function notice(msg){ $("notice").textContent=msg||""; $("notice").hidden=!msg; 
 function gateNotice(msg){ $("gateNotice").textContent=msg||""; $("gateNotice").hidden=!msg; }
 function players(){ return (game && game.players) || {}; }
 function myColor(){ const p=players(); if(!me) return null; if(p.w && p.w.uid===me.uid) return "w"; if(p.b && p.b.uid===me.uid) return "b"; return null; }
-function seatName(c, fb){ const p=players()[c]; return (p && p.name) || fb || (c==="w"?"White":"Black"); }
-function nameByUid(uid, fb){ const p=players(); for(const c of ["w","b"]) if(p[c] && p[c].uid===uid) return p[c].name; return fb; }
-function myName(){ return (me.displayName && me.displayName.split(" ")[0]) || (me.email||"").split("@")[0] || "Player"; }
+// Display names come from config.js ("names"), keyed by a hash of each player's email,
+// so the page shows nicknames (e.g. "Dad", "Genious") without publishing any email address.
+const nickByEmail={};
+async function loadNicks(emails){
+  const map=CFG.names||{}; let changed=false;
+  for(const e of emails){
+    if(!e || e in nickByEmail) continue;
+    try{ nickByEmail[e]=map[await emailHash(e)]||""; }catch(err){ nickByEmail[e]=""; }
+    changed=true;
+  }
+  return changed;
+}
+function nick(email){ return (email && nickByEmail[email]) || ""; }
+function colorLabel(c){ return c==="w"?"White":"Black"; }
+function seatName(c, fb){ const p=players()[c]; return (p && (nick(p.email) || p.name)) || fb || colorLabel(c); }
+function nameByUid(uid, fb){ const p=players(); for(const c of ["w","b"]) if(p[c] && p[c].uid===uid) return seatName(c); return fb; }
+function winText(c){ return `${seatName(c)} wins with ${colorLabel(c)}`; }
+// Result line, rebuilt from the stored outcome so it always uses the current nicknames.
+function resultText(g){
+  const o=g && g.outcome;
+  if(!o) return (g && g.result) || "Game over.";
+  if(o.reason==="checkmate") return `Checkmate. ${winText(o.winner)}.`;
+  if(o.reason==="resign") return `${seatName(o.winner==="w"?"b":"w")} resigned. ${winText(o.winner)}.`;
+  return (g && g.result) || "Game over.";
+}
+function myName(){ return nick(me.email) || (me.displayName && me.displayName.split(" ")[0]) || (me.email||"").split("@")[0] || "Player"; }
 function ago(ts){ if(!ts) return ""; const s=Math.max(0,(Date.now()-ts)/1000);
   if(s<60) return "just now"; if(s<3600) return Math.floor(s/60)+" min ago"; if(s<86400) return Math.floor(s/3600)+" h ago";
   const d=Math.floor(s/86400); return d===1?"yesterday":d+" days ago"; }
@@ -231,7 +254,7 @@ async function pingOpponent(kind, detail){
   const templateId = e.templates[await emailHash(opp.email)];
   if(!templateId){ console.warn("No email template for opponent"); return; }
   const params = {
-    to_name: opp.name || "there", from_name: myName(),
+    to_name: nick(opp.email) || opp.name || "there", from_name: myName(),
     move_san: detail.san || "", move_number: detail.moveNumber || "",
     subject: kind==="move" ? `Your move: ${myName()} played ${detail.san}` : (detail.result || "Chess update"),
     message: kind==="move" ? `${myName()} played ${detail.san} (move ${detail.moveNumber}). It's your turn.` : (detail.result || ""),
@@ -291,7 +314,7 @@ function renderStrips(){
     const seat=p[color], opp=color==="w"?"b":"w";
     el.replaceChildren();
     const nm=document.createElement("span"); nm.className="nm";
-    nm.textContent = seat ? seat.name + (me && seat.uid===me.uid ? " (you)" : "") : (color==="w"?"White":"Black")+" seat open";
+    nm.textContent = seat ? seatName(color) + (me && seat.uid===me.uid ? " (you)" : "") : colorLabel(color)+" seat open";
     const cap=document.createElement("span"); cap.className="cap"; cap.textContent=lost[opp].map(t=>GLYPH[t]+VS).join("");
     const diff=mat[color]-mat[opp];
     if(diff>0){ const a=document.createElement("span"); a.className="adv"; a.textContent="+"+diff; cap.appendChild(a); }
@@ -316,7 +339,7 @@ function renderStatus(){
   }
   if(game.status!=="active"){
     pill.classList.add("over"); pt.textContent="Game over";
-    line.textContent=game.result||"Game over."; sub.textContent="Start a new game whenever you're both ready. Colors swap each game.";
+    line.textContent=resultText(game); sub.textContent="Start a new game whenever you're both ready. Colors swap each game.";
     document.title=BASE_TITLE; return;
   }
   if(!p.w || !p.b){
@@ -364,7 +387,7 @@ function renderControls(){
   box.disabled=!mc; box.checked=!!(mc && p[mc].notify!==false);
   $("notifySub").textContent = !emailReady()
     ? "Email alerts aren't set up yet. Add the EmailJS keys to config.js to turn them on."
-    : (mc ? `Alerts go to ${p[mc].email}. Each email links back to this game.` : "Take a seat to get email alerts.");
+    : (mc ? "Alerts go to the email you signed in with. Each email links back to this game." : "Take a seat to get email alerts.");
   if(!confirmAction) $("confirmSub").hidden=true;
 }
 
@@ -406,7 +429,7 @@ async function makeMove(from,to,promotion){
       const res=c.move({from,to,promotion:promotion||"q"}); if(!res) throw {code:"illegal"};
       const moves=[...(d.moves||[]), {from,to,promotion:res.promotion||null,san:res.san,by:me.uid,at:Date.now()}];
       const upd={moves, fen:c.fen(), updatedAt:Date.now(), lastMoveBy:me.uid};
-      if(c.in_checkmate()){ upd.status="over"; upd.result=`Checkmate. ${myName()} wins with ${res.color==="w"?"White":"Black"}.`; }
+      if(c.in_checkmate()){ upd.status="over"; upd.outcome={winner:res.color, reason:"checkmate"}; upd.result=`Checkmate. ${myName()} wins with ${colorLabel(res.color)}.`; }
       else if(c.in_stalemate()){ upd.status="over"; upd.result="Draw by stalemate."; }
       else if(c.in_threefold_repetition()){ upd.status="over"; upd.result="Draw by threefold repetition."; }
       else if(c.insufficient_material()){ upd.status="over"; upd.result="Draw: not enough material to checkmate."; }
@@ -447,8 +470,9 @@ function armConfirm(kind,text,fn){
   clearTimeout(armConfirm._t); armConfirm._t=setTimeout(()=>{ confirmAction=null; $("confirmSub").hidden=true; },5000);
 }
 $("resignBtn").onclick=()=>armConfirm("resign","Tap Resign again within 5 seconds to confirm.", async ()=>{
-  const mc=myColor(); const result=`${myName()} resigned. ${seatName(mc==="w"?"b":"w")} wins.`;
-  try{ await gameRef.update({status:"over", result, updatedAt:Date.now(), lastMoveBy:me.uid}); pingOpponent("over",{result}); }
+  const mc=myColor(), oc=mc==="w"?"b":"w"; const oppName=(players()[oc]||{}).name||"Your opponent";
+  const result=`${myName()} resigned. ${oppName} wins.`;
+  try{ await gameRef.update({status:"over", result, outcome:{winner:oc, reason:"resign"}, updatedAt:Date.now(), lastMoveBy:me.uid}); pingOpponent("over",{result}); }
   catch(e){ toast("Couldn't resign. Try again."); }
 });
 $("newBtn").onclick=()=>{
@@ -470,7 +494,15 @@ $("notifyBox").onchange=async e=>{
 };
 
 // ---------- live game ----------
+// Snapshots are handled in order, after the nicknames for everyone in them are known,
+// so a real name never flashes on screen.
+let snapQueue=Promise.resolve();
 function onGame(snap){
+  const d = snap.exists ? snap.data() : null, p = (d && d.players) || {};
+  const emails = [me && me.email, p.w && p.w.email, p.b && p.b.email];
+  snapQueue = snapQueue.then(()=>loadNicks(emails)).then(()=>handleGame(snap)).catch(e=>console.warn(e));
+}
+function handleGame(snap){
   const old=game;
   game = snap.exists ? snap.data() : null;
   chess = replay(game && game.moves);
@@ -479,7 +511,7 @@ function onGame(snap){
   if(!firstSnap && old && game){
     const newGame = game.gameNo!==old.gameNo;
     if(!newGame && count>prevCount){ const last=game.moves[count-1]; if(last.by!==me.uid && isMyTurn()) toast(`${nameByUid(last.by,"Your opponent")} played ${last.san}. Your move.`,6000); }
-    if(!newGame && old.status==="active" && game.status!=="active" && game.lastMoveBy!==me.uid) toast(game.result||"Game over.",6000);
+    if(!newGame && old.status==="active" && game.status!=="active" && game.lastMoveBy!==me.uid) toast(resultText(game),6000);
     if(newGame && game.lastMoveBy!==me.uid) toast("A new game has started.",5000);
   }
   if(firstSnap && isMyTurn() && count){ const last=game.moves[count-1]; toast(`${nameByUid(last.by,"Your opponent")} played ${last.san}. Your move.`,5000); }
@@ -491,7 +523,7 @@ function onGame(snap){
 
 function startGame(){
   $("gate").hidden=true; $("game").hidden=false;
-  $("who").hidden=false; $("who").textContent=me.email;
+  $("who").hidden=true;
   firstSnap=true; prevCount=null;
   unsub = gameRef.onSnapshot({includeMetadataChanges:false}, onGame, err=>{
     if(err.code==="permission-denied"){
